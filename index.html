@@ -70,7 +70,7 @@ window.addEventListener("unhandledrejection", function (e) {
 });
 </script>
 <h1>🎙️ iOS 语音全链路诊断（Spike-1/2/4）</h1>
-<div class="sub">LearnSkillsAssistant · 附录 D · <b>v1.3</b> · 每步动作会显示在底部蓝边状态栏</div>
+<div class="sub">LearnSkillsAssistant · 附录 D · <b>v1.4</b> · 每步动作会显示在底部蓝边状态栏</div>
 <div id="modeBadge" class="badge tab">检测中…</div>
 
 <section>
@@ -142,7 +142,7 @@ window.addEventListener("load", () => { try { eruda.init(); } catch (e) {} });
 const $ = id => document.getElementById(id);
 const logEl = $("log");
 const statusEl = $("statusBar");
-const results = { meta: { page: "ios-voice-spike v1.3", ts: new Date().toISOString() },
+const results = { meta: { page: "ios-voice-spike v1.4", ts: new Date().toISOString() },
                   env: {}, tests: {} };
 
 function log(msg, cls) {
@@ -449,7 +449,7 @@ $("btnIssue").onclick = () => {
   const title = `spike1 ${s.mode} ${s.ts.slice(0, 16)}`;
   /* 纯 ASCII 极简正文——中文经 URL 编码体积 x9，曾触发 GitHub "Whoops" 长度上限 */
   const lines = Object.entries(s.tests).map(([id, t]) => {
-    const flag = /失败|异常|不足/.test(t.verdict) ? "FAIL" : "PASS";
+    const flag = t.verdict === "n/a" ? "N/A" : (/失败|异常|不足/.test(t.verdict) ? "FAIL" : "PASS");
     return id + ": " + flag +
       (t.firstResultMs !== undefined ? " first=" + t.firstResultMs + "ms" : "") +
       (t.errors ? " err=" + t.errors.join("/").slice(0, 60) : "") +
