@@ -70,7 +70,7 @@ window.addEventListener("unhandledrejection", function (e) {
 });
 </script>
 <h1>🎙️ iOS 语音全链路诊断（Spike-1/2/4）</h1>
-<div class="sub">LearnSkillsAssistant · 附录 D · <b>v1.1</b> · 每步动作会显示在底部蓝边状态栏</div>
+<div class="sub">LearnSkillsAssistant · 附录 D · <b>v1.2</b> · 每步动作会显示在底部蓝边状态栏</div>
 <div id="modeBadge" class="badge tab">检测中…</div>
 
 <section>
@@ -121,7 +121,9 @@ window.addEventListener("unhandledrejection", function (e) {
 <section>
   <h2>结果汇总</h2>
   <table id="summaryTable"></table>
-  <button class="primary" id="btnCopy">📋 复制结果 JSON</button>
+  <button class="primary" id="btnIssue">📤 提交结果（打开预填好的 GitHub Issue，点绿色 Submit 即可）</button>
+  <button id="btnShare">📨 系统分享完整 JSON（邮件/备忘录，备用通道）</button>
+  <button id="btnCopy">📋 复制结果 JSON 到剪贴板</button>
   <textarea id="jsonOut" readonly placeholder="点上面按钮生成 JSON"></textarea>
 </section>
 
@@ -420,9 +422,54 @@ $("btnT7").onclick = async () => {
 };
 
 /* ---------- 导出 ---------- */
-$("btnCopy").onclick = async () => {
+function fullJson() {
   results.meta.exportedAt = new Date().toISOString();
-  const json = JSON.stringify(results, null, 2);
+  return JSON.stringify(results, null, 2);
+}
+/* 精简摘要：判定 + 关键时延 + 错误码，保证 Issue URL 不超长 */
+function compactSummary() {
+  const s = { page: results.meta.page, ts: new Date().toISOString(),
+              mode: standalone ? "standalone" : "tab",
+              env: { ua: results.env.ua, sr: results.env.hasSpeechRecognition,
+                     tts: results.env.hasSpeechSynthesis, voices: results.env.voices,
+                     sw: results.env.swRegistered === true },
+              tests: {} };
+  for (const [id, t] of Object.entries(results.tests)) {
+    const firstResult = t.events.find(x => x.name.startsWith("sr.result"));
+    const errs = t.events.filter(x => x.name.includes("error")).map(x => x.code || x.msg || x.name);
+    s.tests[id] = { verdict: t.verdict,
+                    ...(firstResult ? { firstResultMs: firstResult.ms } : {}),
+                    ...(errs.length ? { errors: errs } : {}),
+                    ...(t.promptCount !== undefined ? { promptCount: t.promptCount } : {}) };
+  }
+  return s;
+}
+$("btnIssue").onclick = () => {
+  const s = compactSummary();
+  const title = `spike1 results — ${s.mode} — ${s.ts.slice(0, 16)}`;
+  let body = "自动生成的 spike-1 结果摘要（完整事件日志见页面导出的 JSON）：\n\n```json\n" +
+             JSON.stringify(s, null, 1) + "\n```";
+  let url = "https://github.com/jetzhu/Learn-Skill-Assistant/issues/new?title=" +
+            encodeURIComponent(title) + "&body=" + encodeURIComponent(body);
+  if (url.length > 7500) {
+    for (const t of Object.values(s.tests)) delete t.errors;
+    body = "spike-1 结果摘要（截断版）：\n\n```json\n" + JSON.stringify(s, null, 1) + "\n```";
+    url = "https://github.com/jetzhu/Learn-Skill-Assistant/issues/new?title=" +
+          encodeURIComponent(title) + "&body=" + encodeURIComponent(body);
+  }
+  log("正在打开 GitHub Issue 预填页——登录后点 Submit new issue 提交", "ev");
+  window.open(url, "_blank");
+};
+$("btnShare").onclick = async () => {
+  const json = fullJson();
+  $("jsonOut").value = json;
+  if (navigator.share) {
+    try { await navigator.share({ title: "spike1 results", text: json }); log("已调起系统分享", "ok"); }
+    catch (e) { log("分享取消/失败: " + e, "warn2"); }
+  } else log("此浏览器不支持系统分享——请用复制按钮", "warn2");
+};
+$("btnCopy").onclick = async () => {
+  const json = fullJson();
   $("jsonOut").value = json;
   try { await navigator.clipboard.writeText(json); log("JSON 已复制到剪贴板", "ok"); }
   catch (e) { $("jsonOut").select(); log("剪贴板 API 不可用——请长按文本框手动复制", "warn2"); }
