@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>iOS Voice Spike — LearnSkillsAssistant</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="VoiceSpike">
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+         background: #0f172a; color: #e2e8f0; padding: 12px 12px 80px; }
+  h1 { font-size: 18px; margin: 4px 0 2px; }
+  .sub { color: #94a3b8; font-size: 12px; margin-bottom: 10px; }
+  .badge { display: inline-block; padding: 6px 14px; border-radius: 999px; font-weight: 700;
+           font-size: 14px; margin: 6px 0 10px; }
+  .badge.tab { background: #1d4ed8; color: #fff; }
+  .badge.standalone { background: #15803d; color: #fff; }
+  section { background: #1e293b; border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+  section h2 { font-size: 14px; margin: 0 0 8px; color: #7dd3fc; }
+  .hint { font-size: 12px; color: #94a3b8; margin: 4px 0 8px; line-height: 1.5; }
+  button { display: block; width: 100%; padding: 13px 12px; margin: 8px 0; font-size: 15px;
+           border: none; border-radius: 10px; background: #334155; color: #f1f5f9;
+           font-weight: 600; text-align: left; }
+  button:active { background: #475569; }
+  button.primary { background: #2563eb; }
+  button.warn { background: #b45309; }
+  button.small { display: inline-block; width: auto; padding: 8px 14px; margin: 4px 6px 4px 0;
+                 font-size: 14px; text-align: center; }
+  button:disabled { opacity: .45; }
+  #log { background: #020617; border-radius: 10px; padding: 10px; font: 11px/1.6 ui-monospace, Menlo, Consolas, monospace;
+         max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+  .ok    { color: #4ade80; } .err { color: #f87171; } .ev { color: #7dd3fc; }
+  .warn2 { color: #fbbf24; } .mut { color: #64748b; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  td, th { padding: 5px 6px; border-bottom: 1px solid #334155; text-align: left; vertical-align: top; }
+  td:first-child { color: #94a3b8; white-space: nowrap; }
+  #summaryTable td.pass { color: #4ade80; font-weight: 700; }
+  #summaryTable td.fail { color: #f87171; font-weight: 700; }
+  #summaryTable td.na   { color: #64748b; }
+  textarea { width: 100%; height: 90px; background: #020617; color: #e2e8f0; border: 1px solid #334155;
+             border-radius: 8px; font: 11px ui-monospace, monospace; padding: 8px; }
+</style>
+</head>
+<body>
+<h1>🎙️ iOS 语音全链路诊断（Spike-1/2/4）</h1>
+<div class="sub">LearnSkillsAssistant · 附录 D · v1.0 · 结果只保存在本页，点「复制结果」发回</div>
+<div id="modeBadge" class="badge tab">检测中…</div>
+
+<section>
+  <h2>0 · 环境信息（自动采集）</h2>
+  <table id="envTable"></table>
+</section>
+
+<section>
+  <h2>1 · 准备</h2>
+  <div class="hint">先点这两个按钮。「解锁音频」必须最先点（iOS 要求 TTS 挂在用户手势上）。</div>
+  <button class="primary" id="btnUnlock">🔓 T0a 解锁音频（必须先点）</button>
+  <button id="btnMic">🎤 T0b 麦克风权限测试（getUserMedia）</button>
+</section>
+
+<section>
+  <h2>2 · 语音识别（ASR）</h2>
+  <div class="hint">点按钮后对手机说出提示的句子。观察：是否弹权限框、是否出转写、事件是否齐全。</div>
+  <button class="primary" id="btnT1">T1 英文单句识别 — 说 “Can we reschedule the meeting tomorrow?”</button>
+  <button class="primary" id="btnT2">T2 中文单句识别 — 说 “地铁站离这儿远吗？”</button>
+  <button id="btnT3">T3 连续识别 20 秒（continuous+interim，测 iOS 静默失效 bug）— 期间随意多说几句英文</button>
+</section>
+
+<section>
+  <h2>3 · 语音合成（TTS）与音频会话冲突</h2>
+  <div class="hint">T4 听有没有声音（注意静音拨片！）。T5a/T5b 是本 spike 的核心判定项。</div>
+  <button class="primary" id="btnT4">T4 纯 TTS 播放（英文一句）</button>
+  <button class="warn" id="btnT5a">T5a TTS 播完 → 立即启动识别（跟读场景）— TTS 结束后说 “I need more time”</button>
+  <button class="warn" id="btnT5b">T5b TTS 播放中 → 启动识别（并发冲突）— 观察 TTS 是否被掐断/识别是否报错</button>
+  <button id="btnT4zh">T4b 中文 TTS 播放（检查 zh-CN 语音包）</button>
+</section>
+
+<section>
+  <h2>4 · 权限弹窗频率</h2>
+  <div class="hint">点 T6 会连续做 3 次单句识别（每次间隔 2 秒，说什么都行）。完成后如实点选系统权限框弹了几次。</div>
+  <button id="btnT6">T6 连续 3 次识别（数权限弹窗）</button>
+  <div id="t6ask" style="display:none">
+    <span class="hint">权限框弹了几次？</span>
+    <button class="small" data-n="0">0 次</button><button class="small" data-n="1">1 次</button>
+    <button class="small" data-n="2">2 次</button><button class="small" data-n="3">3 次</button>
+  </div>
+</section>
+
+<section>
+  <h2>5 · 存储持久化（Spike-4 前置探针）</h2>
+  <button id="btnT7">T7 请求持久存储 navigator.storage.persist()</button>
+</section>
+
+<section>
+  <h2>结果汇总</h2>
+  <table id="summaryTable"></table>
+  <button class="primary" id="btnCopy">📋 复制结果 JSON</button>
+  <textarea id="jsonOut" readonly placeholder="点上面按钮生成 JSON"></textarea>
+</section>
+
+<section>
+  <h2>事件日志</h2>
+  <button class="small" id="btnClear">清空日志</button>
+  <div id="log"></div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/eruda@3/eruda.min.js"></script>
+<script>
+"use strict";
+try { eruda.init(); } catch (e) {}
+
+const $ = id => document.getElementById(id);
+const logEl = $("log");
+const results = { meta: { page: "ios-voice-spike v1.0", ts: new Date().toISOString() },
+                  env: {}, tests: {} };
+
+function log(msg, cls) {
+  const t = (performance.now() / 1000).toFixed(2).padStart(7);
+  const line = document.createElement("div");
+  line.className = cls || "";
+  line.textContent = `[${t}] ${msg}`;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+$("btnClear").onclick = () => { logEl.innerHTML = ""; };
+
+/* ---------- 环境采集 ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const standalone = (navigator.standalone === true) ||
+                   (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
+(function envInit() {
+  const e = results.env;
+  e.ua = navigator.userAgent;
+  e.secureContext = window.isSecureContext;
+  e.standalone = standalone;
+  e.navigatorStandalone = navigator.standalone;
+  e.displayModeStandalone = matchMedia("(display-mode: standalone)").matches;
+  e.launchQuery = location.search;
+  e.hasSpeechRecognition = !!SR;
+  e.hasSpeechSynthesis = !!window.speechSynthesis;
+  e.hasServiceWorker = "serviceWorker" in navigator;
+  e.hasStorageAPI = !!(navigator.storage && navigator.storage.persist);
+  const badge = $("modeBadge");
+  if (standalone) { badge.textContent = "🟢 STANDALONE 主屏幕模式"; badge.className = "badge standalone"; }
+  else { badge.textContent = "🔵 SAFARI 标签页模式"; badge.className = "badge tab"; }
+  const rows = [
+    ["模式", standalone ? "standalone（主屏幕）" : "浏览器标签页"],
+    ["SpeechRecognition", SR ? "✅ 可用" : "❌ 不存在"],
+    ["speechSynthesis", window.speechSynthesis ? "✅ 可用" : "❌ 不存在"],
+    ["安全上下文", e.secureContext ? "✅" : "❌"],
+    ["ServiceWorker", e.hasServiceWorker ? "✅" : "❌"],
+    ["UA", navigator.userAgent],
+  ];
+  $("envTable").innerHTML = rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join("");
+  log("环境采集完成；模式=" + (standalone ? "STANDALONE" : "TAB"), "ok");
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js").then(
+      () => { results.env.swRegistered = true; log("ServiceWorker 注册成功", "ok"); },
+      err => { results.env.swRegistered = String(err); log("ServiceWorker 注册失败: " + err, "err"); });
+  }
+  if (window.speechSynthesis) {
+    const dump = () => {
+      const v = speechSynthesis.getVoices();
+      results.env.voices = { total: v.length,
+        en: v.filter(x => x.lang.startsWith("en")).length,
+        zh: v.filter(x => x.lang.startsWith("zh")).length,
+        localEn: v.filter(x => x.lang.startsWith("en") && x.localService).length };
+      log(`TTS 语音包: 共 ${v.length}（en ${results.env.voices.en} / zh ${results.env.voices.zh}）`, "ev");
+    };
+    dump();
+    speechSynthesis.onvoiceschanged = dump;
+  }
+})();
+
+/* ---------- 工具 ---------- */
+function newTest(id, label) {
+  const t = { label, startedAt: new Date().toISOString(), events: [], verdict: "n/a" };
+  results.tests[id] = t;
+  log(`▶ ${id} ${label}`, "ev");
+  return t;
+}
+function ev(t, name, extra) {
+  const ms = Math.round(performance.now() - t._t0);
+  t.events.push({ ms, name, ...(extra || {}) });
+  log(`  +${ms}ms ${name}${extra ? " " + JSON.stringify(extra) : ""}`,
+      name.includes("error") ? "err" : "mut");
+}
+function setVerdict(t, v, cls) { t.verdict = v; log(`■ 判定: ${v}`, cls || "ok"); renderSummary(); }
+
+function makeRecognizer(t, lang, continuous, onFinal) {
+  const r = new SR();
+  r.lang = lang; r.continuous = !!continuous; r.interimResults = true; r.maxAlternatives = 1;
+  ["start","audiostart","soundstart","speechstart","speechend","soundend","audioend","nomatch"]
+    .forEach(n => r.addEventListener(n, () => ev(t, "sr." + n)));
+  r.addEventListener("result", e => {
+    const res = e.results[e.results.length - 1];
+    const alt = res[0];
+    ev(t, res.isFinal ? "sr.result.FINAL" : "sr.result.interim",
+       { text: alt.transcript, conf: +(alt.confidence || 0).toFixed(2) });
+    if (res.isFinal && onFinal) onFinal(alt.transcript);
+  });
+  r.addEventListener("error", e => ev(t, "sr.error", { code: e.error, msg: e.message || "" }));
+  r.addEventListener("end", () => ev(t, "sr.end"));
+  return r;
+}
+
+function speak(t, text, lang) {
+  return new Promise(resolve => {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = lang;
+    u.onstart = () => ev(t, "tts.start");
+    u.onerror = e => { ev(t, "tts.error", { code: e.error }); resolve("error"); };
+    u.onend = () => { ev(t, "tts.end"); resolve("end"); };
+    ev(t, "tts.speak() called", { text });
+    speechSynthesis.speak(u);
+    setTimeout(() => { if (!t.events.some(x => x.name === "tts.start")) {
+      ev(t, "tts.NO-START-after-4s"); resolve("no-start"); } }, 4000);
+  });
+}
+
+function renderSummary() {
+  const rows = Object.entries(results.tests).map(([id, t]) => {
+    const cls = /通过|正常/.test(t.verdict) ? "pass" : (t.verdict === "n/a" ? "na" : "fail");
+    return `<tr><td>${id}</td><td>${t.label}</td><td class="${cls}">${t.verdict}</td></tr>`;
+  });
+  $("summaryTable").innerHTML =
+    "<tr><th>测试</th><th>项目</th><th>判定</th></tr>" + rows.join("");
+}
+
+/* ---------- T0 准备 ---------- */
+$("btnUnlock").onclick = async () => {
+  const t = newTest("T0a", "解锁音频"); t._t0 = performance.now();
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    await ctx.resume(); ev(t, "audioContext." + ctx.state);
+    if (window.speechSynthesis) { speechSynthesis.cancel();
+      speechSynthesis.speak(new SpeechSynthesisUtterance("")); ev(t, "tts.empty-utterance"); }
+    setVerdict(t, "已执行（解锁通过后续 TTS 是否出声验证）");
+  } catch (e) { ev(t, "error", { msg: String(e) }); setVerdict(t, "失败: " + e, "err"); }
+};
+
+$("btnMic").onclick = async () => {
+  const t = newTest("T0b", "getUserMedia 麦克风"); t._t0 = performance.now();
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+    ev(t, "granted", { tracks: s.getAudioTracks().length });
+    s.getTracks().forEach(x => x.stop());
+    setVerdict(t, "通过（已授权并释放）");
+  } catch (e) { ev(t, "denied/error", { name: e.name, msg: e.message }); setVerdict(t, "失败: " + e.name, "err"); }
+};
+
+/* ---------- 单句识别 ---------- */
+function singleShot(id, label, lang) {
+  if (!SR) { alert("此浏览器无 SpeechRecognition"); return; }
+  const t = newTest(id, label); t._t0 = performance.now();
+  let final = "";
+  const r = makeRecognizer(t, lang, false, txt => final = txt);
+  const guard = setTimeout(() => { ev(t, "guard.12s-timeout-stop"); try { r.stop(); } catch (e) {} }, 12000);
+  r.addEventListener("end", () => {
+    clearTimeout(guard);
+    const gotResult = t.events.some(x => x.name.startsWith("sr.result"));
+    const err = (t.events.find(x => x.name === "sr.error") || {}).code;
+    if (final) setVerdict(t, `通过 — 最终转写: “${final}”`);
+    else if (gotResult) setVerdict(t, "部分通过 — 只有 interim、无 final", "warn2");
+    else setVerdict(t, "失败 — 无任何结果" + (err ? `（error: ${err}）` : ""), "err");
+  }, { once: true });
+  try { r.start(); ev(t, "sr.start() called"); }
+  catch (e) { ev(t, "sr.start() threw", { msg: String(e) }); setVerdict(t, "失败: start() 抛异常", "err"); }
+}
+$("btnT1").onclick = () => singleShot("T1", "英文单句识别 en-US", "en-US");
+$("btnT2").onclick = () => singleShot("T2", "中文单句识别 zh-CN", "zh-CN");
+
+/* ---------- T3 连续识别 ---------- */
+$("btnT3").onclick = () => {
+  if (!SR) return;
+  const t = newTest("T3", "连续识别 20s（iOS 静默失效检测）"); t._t0 = performance.now();
+  const r = makeRecognizer(t, "en-US", true);
+  setTimeout(() => { ev(t, "test.20s-stop"); try { r.stop(); } catch (e) {} }, 20000);
+  r.addEventListener("end", () => {
+    const finals = t.events.filter(x => x.name === "sr.result.FINAL");
+    const lastResultMs = Math.max(0, ...t.events.filter(x => x.name.startsWith("sr.result")).map(x => x.ms));
+    if (finals.length >= 2) setVerdict(t, `通过 — ${finals.length} 个 final，最后结果在 ${lastResultMs}ms`);
+    else if (finals.length === 1 && lastResultMs < 12000)
+      setVerdict(t, `疑似 iOS bug — 仅 1 个 final（${lastResultMs}ms）后静默`, "warn2");
+    else setVerdict(t, `结果不足（finals=${finals.length}）`, "err");
+  }, { once: true });
+  try { r.start(); ev(t, "sr.start() called, continuous=true"); }
+  catch (e) { ev(t, "sr.start() threw", { msg: String(e) }); setVerdict(t, "失败: start() 抛异常", "err"); }
+};
+
+/* ---------- T4 TTS ---------- */
+$("btnT4").onclick = async () => {
+  const t = newTest("T4", "纯 TTS（en-US）"); t._t0 = performance.now();
+  const out = await speak(t, "Can we reschedule the meeting tomorrow?", "en-US");
+  setVerdict(t, out === "end" ? "事件正常 — 请确认是否真的听到了声音（静音拨片会静音 TTS）"
+                              : "TTS 异常: " + out, out === "end" ? "ok" : "err");
+};
+$("btnT4zh").onclick = async () => {
+  const t = newTest("T4b", "纯 TTS（zh-CN）"); t._t0 = performance.now();
+  const out = await speak(t, "地铁站离这儿远吗？", "zh-CN");
+  setVerdict(t, out === "end" ? "事件正常 — 请确认听感与音质" : "TTS 异常: " + out,
+             out === "end" ? "ok" : "err");
+};
+
+/* ---------- T5 冲突 ---------- */
+$("btnT5a").onclick = async () => {
+  if (!SR) return;
+  const t = newTest("T5a", "TTS 结束→立即 ASR（跟读场景）"); t._t0 = performance.now();
+  await speak(t, "I need more time.", "en-US");
+  ev(t, "now-starting-ASR");
+  let final = "";
+  const r = makeRecognizer(t, "en-US", false, txt => final = txt);
+  const guard = setTimeout(() => { try { r.stop(); } catch (e) {} }, 12000);
+  r.addEventListener("end", () => {
+    clearTimeout(guard);
+    const err = (t.events.find(x => x.name === "sr.error") || {}).code;
+    if (final) setVerdict(t, `通过 — 跟读链路可行，转写: “${final}”`);
+    else setVerdict(t, "失败 — TTS 后识别无结果" + (err ? `（${err}）` : ""), "err");
+  }, { once: true });
+  try { r.start(); ev(t, "sr.start() after tts.end"); }
+  catch (e) { ev(t, "sr.start() threw", { msg: String(e) }); setVerdict(t, "失败: start() 抛异常", "err"); }
+};
+
+$("btnT5b").onclick = () => {
+  if (!SR) return;
+  const t = newTest("T5b", "TTS 播放中启动 ASR（并发冲突）"); t._t0 = performance.now();
+  speak(t, "This is a long sentence used to test whether speech synthesis keeps playing while recognition starts in the middle of it.", "en-US")
+    .then(out => ev(t, "tts.finished-with: " + out));
+  setTimeout(() => {
+    ev(t, "starting-ASR-while-TTS-speaking");
+    const r = makeRecognizer(t, "en-US", false);
+    const guard = setTimeout(() => { try { r.stop(); } catch (e) {} }, 10000);
+    r.addEventListener("end", () => {
+      clearTimeout(guard);
+      const srErr = (t.events.find(x => x.name === "sr.error") || {}).code;
+      const ttsCut = t.events.some(x => x.name === "tts.error") ||
+                     !t.events.some(x => x.name === "tts.end");
+      setVerdict(t, `记录完成 — ASR ${srErr ? "报错:" + srErr : "未报错"}；TTS ${ttsCut ? "疑似被掐断" : "完整播完"}（请结合听感确认）`,
+                 srErr || ttsCut ? "warn2" : "ok");
+    }, { once: true });
+    try { r.start(); } catch (e) { ev(t, "sr.start() threw", { msg: String(e) }); }
+  }, 800);
+};
+
+/* ---------- T6 权限频率 ---------- */
+$("btnT6").onclick = async () => {
+  if (!SR) return;
+  const t = newTest("T6", "3 次连续识别的权限弹窗频率"); t._t0 = performance.now();
+  for (let i = 1; i <= 3; i++) {
+    ev(t, `round-${i}-start`);
+    await new Promise(res => {
+      const r = makeRecognizer(t, "en-US", false);
+      const guard = setTimeout(() => { try { r.stop(); } catch (e) {} }, 8000);
+      r.addEventListener("end", () => { clearTimeout(guard); res(); }, { once: true });
+      try { r.start(); } catch (e) { ev(t, "start threw", { msg: String(e) }); res(); }
+    });
+    await new Promise(res => setTimeout(res, 2000));
+  }
+  $("t6ask").style.display = "block";
+  log("T6 完成 — 请在上方点选权限框弹出次数", "warn2");
+};
+document.querySelectorAll("#t6ask button").forEach(b => b.onclick = () => {
+  const t = results.tests.T6; if (!t) return;
+  t.promptCount = +b.dataset.n;
+  setVerdict(t, `记录完成 — 3 次识别中权限框弹出 ${t.promptCount} 次`,
+             t.promptCount <= 1 ? "ok" : "warn2");
+  $("t6ask").style.display = "none";
+});
+
+/* ---------- T7 持久存储 ---------- */
+$("btnT7").onclick = async () => {
+  const t = newTest("T7", "storage.persist() / estimate()"); t._t0 = performance.now();
+  try {
+    if (!navigator.storage || !navigator.storage.persist) throw new Error("Storage API 不可用");
+    const persisted = await navigator.storage.persist();
+    const already = await navigator.storage.persisted();
+    const est = navigator.storage.estimate ? await navigator.storage.estimate() : {};
+    ev(t, "result", { persist: persisted, persisted: already,
+                      quotaMB: est.quota ? Math.round(est.quota / 1048576) : "?" });
+    setVerdict(t, `persist()=${persisted}（注意：Safari 上此结果能否豁免 ITP 7 天清除仍属未知——spike-4 需时间验证）`,
+               persisted ? "ok" : "warn2");
+  } catch (e) { ev(t, "error", { msg: String(e) }); setVerdict(t, "失败: " + e.message, "err"); }
+};
+
+/* ---------- 导出 ---------- */
+$("btnCopy").onclick = async () => {
+  results.meta.exportedAt = new Date().toISOString();
+  const json = JSON.stringify(results, null, 2);
+  $("jsonOut").value = json;
+  try { await navigator.clipboard.writeText(json); log("JSON 已复制到剪贴板", "ok"); }
+  catch (e) { $("jsonOut").select(); log("剪贴板 API 不可用——请长按文本框手动复制", "warn2"); }
+};
+renderSummary();
+</script>
+</body>
+</html>
