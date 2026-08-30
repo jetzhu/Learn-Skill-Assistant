@@ -15,6 +15,10 @@ coverage/
 .env.*
 !.env.example
 *.local
+github_access.txt
+*_access.txt
+*token*.txt
+*credential*
 
 # Logs
 logs/
