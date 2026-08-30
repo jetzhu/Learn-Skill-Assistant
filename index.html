@@ -70,7 +70,7 @@ window.addEventListener("unhandledrejection", function (e) {
 });
 </script>
 <h1>🎙️ iOS 语音全链路诊断（Spike-1/2/4）</h1>
-<div class="sub">LearnSkillsAssistant · 附录 D · <b>v1.2</b> · 每步动作会显示在底部蓝边状态栏</div>
+<div class="sub">LearnSkillsAssistant · 附录 D · <b>v1.3</b> · 每步动作会显示在底部蓝边状态栏</div>
 <div id="modeBadge" class="badge tab">检测中…</div>
 
 <section>
@@ -142,7 +142,7 @@ window.addEventListener("load", () => { try { eruda.init(); } catch (e) {} });
 const $ = id => document.getElementById(id);
 const logEl = $("log");
 const statusEl = $("statusBar");
-const results = { meta: { page: "ios-voice-spike v1.0", ts: new Date().toISOString() },
+const results = { meta: { page: "ios-voice-spike v1.3", ts: new Date().toISOString() },
                   env: {}, tests: {} };
 
 function log(msg, cls) {
@@ -446,18 +446,21 @@ function compactSummary() {
 }
 $("btnIssue").onclick = () => {
   const s = compactSummary();
-  const title = `spike1 results — ${s.mode} — ${s.ts.slice(0, 16)}`;
-  let body = "自动生成的 spike-1 结果摘要（完整事件日志见页面导出的 JSON）：\n\n```json\n" +
-             JSON.stringify(s, null, 1) + "\n```";
-  let url = "https://github.com/jetzhu/Learn-Skill-Assistant/issues/new?title=" +
-            encodeURIComponent(title) + "&body=" + encodeURIComponent(body);
-  if (url.length > 7500) {
-    for (const t of Object.values(s.tests)) delete t.errors;
-    body = "spike-1 结果摘要（截断版）：\n\n```json\n" + JSON.stringify(s, null, 1) + "\n```";
-    url = "https://github.com/jetzhu/Learn-Skill-Assistant/issues/new?title=" +
-          encodeURIComponent(title) + "&body=" + encodeURIComponent(body);
-  }
-  log("正在打开 GitHub Issue 预填页——登录后点 Submit new issue 提交", "ev");
+  const title = `spike1 ${s.mode} ${s.ts.slice(0, 16)}`;
+  /* 纯 ASCII 极简正文——中文经 URL 编码体积 x9，曾触发 GitHub "Whoops" 长度上限 */
+  const lines = Object.entries(s.tests).map(([id, t]) => {
+    const flag = /失败|异常|不足/.test(t.verdict) ? "FAIL" : "PASS";
+    return id + ": " + flag +
+      (t.firstResultMs !== undefined ? " first=" + t.firstResultMs + "ms" : "") +
+      (t.errors ? " err=" + t.errors.join("/").slice(0, 60) : "") +
+      (t.promptCount !== undefined ? " prompts=" + t.promptCount : "");
+  });
+  const body = "mode=" + s.mode + "\nua=" + s.env.ua + "\nvoices en=" +
+    (s.env.voices ? s.env.voices.en : "?") + " zh=" + (s.env.voices ? s.env.voices.zh : "?") +
+    "\n\n" + lines.join("\n") + "\n\n(full JSON: paste as a comment via the copy button)";
+  const url = "https://github.com/jetzhu/Learn-Skill-Assistant/issues/new?title=" +
+              encodeURIComponent(title) + "&body=" + encodeURIComponent(body);
+  log("正在打开 GitHub Issue 预填页（" + url.length + " chars）——点 Submit new issue 提交", "ev");
   window.open(url, "_blank");
 };
 $("btnShare").onclick = async () => {
