@@ -43,11 +43,34 @@
   #summaryTable td.na   { color: #64748b; }
   textarea { width: 100%; height: 90px; background: #020617; color: #e2e8f0; border: 1px solid #334155;
              border-radius: 8px; font: 11px ui-monospace, monospace; padding: 8px; }
+  #fatal { display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+           background: #b91c1c; color: #fff; font: 12px/1.5 ui-monospace, monospace; padding: 8px 10px; }
+  #statusBar { position: fixed; bottom: 0; left: 0; right: 0; z-index: 9998; background: #1e293b;
+               border-top: 2px solid #2563eb; color: #e2e8f0; padding: 8px 10px;
+               font: 12px/1.4 ui-monospace, monospace; min-height: 18px;
+               padding-bottom: calc(8px + env(safe-area-inset-bottom)); }
 </style>
 </head>
 <body>
+<div id="fatal"></div>
+<script>
+/* 全局错误捕获：即使主脚本崩溃也能在页面顶部看到红条 */
+window.addEventListener("error", function (e) {
+  var el = document.getElementById("fatal");
+  if (!el) return;
+  el.style.display = "block";
+  el.textContent = "⚠️ JS 错误: " + (e.message || e.type) + " @ " +
+    ((e.filename || "").split("/").pop() || "?") + ":" + (e.lineno || "?");
+});
+window.addEventListener("unhandledrejection", function (e) {
+  var el = document.getElementById("fatal");
+  if (!el) return;
+  el.style.display = "block";
+  el.textContent = "⚠️ Promise 未处理拒绝: " + (e.reason && (e.reason.message || e.reason) || "?");
+});
+</script>
 <h1>🎙️ iOS 语音全链路诊断（Spike-1/2/4）</h1>
-<div class="sub">LearnSkillsAssistant · 附录 D · v1.0 · 结果只保存在本页，点「复制结果」发回</div>
+<div class="sub">LearnSkillsAssistant · 附录 D · <b>v1.1</b> · 每步动作会显示在底部蓝边状态栏</div>
 <div id="modeBadge" class="badge tab">检测中…</div>
 
 <section>
@@ -108,13 +131,15 @@
   <div id="log"></div>
 </section>
 
-<script src="https://cdn.jsdelivr.net/npm/eruda@3/eruda.min.js"></script>
+<div id="statusBar">⏳ 页面脚本加载中…（如果一直停在这行说明主脚本未执行）</div>
+<script src="https://cdn.jsdelivr.net/npm/eruda@3/eruda.min.js" defer></script>
 <script>
 "use strict";
-try { eruda.init(); } catch (e) {}
+window.addEventListener("load", () => { try { eruda.init(); } catch (e) {} });
 
 const $ = id => document.getElementById(id);
 const logEl = $("log");
+const statusEl = $("statusBar");
 const results = { meta: { page: "ios-voice-spike v1.0", ts: new Date().toISOString() },
                   env: {}, tests: {} };
 
@@ -125,6 +150,8 @@ function log(msg, cls) {
   line.textContent = `[${t}] ${msg}`;
   logEl.appendChild(line);
   logEl.scrollTop = logEl.scrollHeight;
+  statusEl.textContent = "▸ " + msg;
+  statusEl.style.color = cls === "err" ? "#f87171" : cls === "warn2" ? "#fbbf24" : "#e2e8f0";
 }
 $("btnClear").onclick = () => { logEl.innerHTML = ""; };
 
@@ -177,8 +204,10 @@ const standalone = (navigator.standalone === true) ||
 })();
 
 /* ---------- 工具 ---------- */
+const BTN = { T0a: "btnUnlock", T0b: "btnMic", T1: "btnT1", T2: "btnT2", T3: "btnT3",
+              T4: "btnT4", T4b: "btnT4zh", T5a: "btnT5a", T5b: "btnT5b", T6: "btnT6", T7: "btnT7" };
 function newTest(id, label) {
-  const t = { label, startedAt: new Date().toISOString(), events: [], verdict: "n/a" };
+  const t = { _id: id, label, startedAt: new Date().toISOString(), events: [], verdict: "n/a" };
   results.tests[id] = t;
   log(`▶ ${id} ${label}`, "ev");
   return t;
@@ -189,7 +218,11 @@ function ev(t, name, extra) {
   log(`  +${ms}ms ${name}${extra ? " " + JSON.stringify(extra) : ""}`,
       name.includes("error") ? "err" : "mut");
 }
-function setVerdict(t, v, cls) { t.verdict = v; log(`■ 判定: ${v}`, cls || "ok"); renderSummary(); }
+function setVerdict(t, v, cls) {
+  t.verdict = v; log(`■ 判定: ${v}`, cls || "ok"); renderSummary();
+  const b = BTN[t._id] && $(BTN[t._id]);
+  if (b) b.textContent = (/失败|异常/.test(v) ? "❌ " : "✅ ") + b.textContent.replace(/^[✅❌] /, "");
+}
 
 function makeRecognizer(t, lang, continuous, onFinal) {
   const r = new SR();
