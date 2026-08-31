@@ -1,0 +1,11 @@
+{
+  "name": "learn-skills-assistant",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "packageManager": "pnpm@10.34.5",
+  "scripts": {
+    "test": "pnpm -r --if-present test",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "build": "pnpm -r --if-present build"
+  }
+}
