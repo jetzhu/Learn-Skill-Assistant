@@ -10,4 +10,4 @@
 - 登录：Microsoft / Google 账户
 - 数据：存储抽象层，用户数据存于自己的云盘（OneDrive / Google Drive）或本地
 
-📄 完整需求见 [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)。
+📄 文档：[需求 REQUIREMENTS.md](docs/REQUIREMENTS.md)（v0.6，经六轮专家评审 + 四项技术验证）· [设计 DESIGN.md](docs/DESIGN.md) · [示例技能包选材 SKILL_PACKS_V1.md](docs/SKILL_PACKS_V1.md) · 技术验证代码与数据见 [spikes/](spikes/)。
