@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| 版本 | v0.5 |
+| 版本 | v0.6 |
 | 日期 | 2026-08-30 |
-| 状态 | 待评审 |
+| 状态 | 待评审（P0 技术验证已全部完成，可进入设计阶段） |
 | 内容来源 | YouTube 影片《为何学了多年语言仍开不了口》（https://www.youtube.com/watch?v=Pdhudc_p4WQ ）方法论总结 + 产品决策讨论 |
 
 **变更记录**
@@ -16,6 +16,7 @@
 | v0.3 | 整合两轮专家评审：③隐私・安全・合规评审（新增 F1.6、F6.5–F6.8、F7.6–F7.9、F8.7–F8.11、F17 未成年人保护、N10/N11；改写 N3/N8/F6.2/F7.2/F8.2）；④技术可行性评审（iOS 语音/推送/存储假设核查，改写 F2 语音条款/F6.4/F7.4，新增 N9 降级矩阵、F13.6、F4.13、附录 D spike 清单）。新增 F8.12 BYOT（用户自带 Token/模型）。开放问题 +3 |
 | v0.4 | 附录 B 全部开放问题决策落地：目标市场敲定（首要＝美国学中文学生，次要＝中国学英文学生，新 2.1 节；UI 首发英文为主 N7）；示例技能包改双包（F1.1，选材清单经⑤语言教学专家评审落地为 `docs/SKILL_PACKS_V1.md`，含分级提示/开口时限分层/声调处理规范，联动修订 F1.3/F2）；⑥BYOT 安全架构调研落地（F8.12 重写：加密 Cookie 保险箱 + BFF 透传 + SSRF 防护，禁直连、禁云盘同步 key）；OneDrive 先行 + Google Drive 提级、遥测无 ID 聚合、保持率默认 90% 等决策记录于附录 B |
 | v0.5 | **spike-1 iOS 真机验证完成**（iPhone iOS 16.7，诊断页与两轮数据存于 `spikes/ios-voice/`）：Safari 标签页单句识别可用、跟读链路通过、standalone 下识别被系统禁用（service-not-allowed）。落地：N9 矩阵按实测定案；F13.6 定为「iOS 保语音、弃推送引导、邮件兜底」；F2 增补 TTS onend 兜底定时器与并发实测结论；F5.2 语音轮次一律单句式；新增识别会话冷却/重试工程约束；附录 D spike-1 关闭、spike-2 部分完成 |
+| v0.6 | **spike-3/5/6 完成**（`spikes/onedrive-sync/`、`spikes/claude-cli/`、`spikes/ts-fsrs-replay/`）：OneDrive If-Match 乐观并发与 create-only 分片确证可用、delta 增量可用，新增「未开通 503」「过期令牌 401」边界写入 F7.2；Claude CLI 适配可行但每次调用 ~5–6s 固定开销（教练需常驻进程模式）、结构化输出需剥围栏管线；ts-fsrs 全量重放万卡 <1s，MemoryState 定为可重建缓存、云端只同步 ReviewLog，fuzz 必须关闭。**附录 D 六项 P0 spike 中 1/3/5/6 关闭、2 部分完成、4 需长周期观察——设计阶段前置验证全部完成** |
 
 ---
 
@@ -210,7 +211,7 @@ CoachConversation（AI 教练对话）
 
 - F7.1 定义 `StorageProvider` 接口（读/写/列举/删除文档级数据）。接口契约必须包含：**「机会性同步」的令牌状态机与待同步队列语义**（见 F7.4）、**冲突处理约定**（按两家云盘中最弱的并发原语设计；ReviewLog 只追加的特性优先采用「按会话分片文件 + 合并去重」的无冲突设计，可变文档用版本比对/If-Match）；
 - F7.2 内置 Provider：
-  - **OneDrive Provider**：Microsoft Graph，**仅使用 `Files.ReadWrite.AppFolder` 委托权限访问 `special/approot`**。该权限长期仅对个人（消费者）账户可靠生效——**MVP 仅支持个人 Microsoft 账户**，工作/学校（AAD）账户登录时须校验实际生效 scope，能力不保证时在 UI 明示并允许用户拒绝（见 F7.6）；
+  - **OneDrive Provider**：Microsoft Graph，**仅使用 `Files.ReadWrite.AppFolder` 委托权限访问 `special/approot`**。该权限长期仅对个人（消费者）账户可靠生效——**MVP 仅支持个人 Microsoft 账户**，工作/学校（AAD）账户登录时须校验实际生效 scope，能力不保证时在 UI 明示并允许用户拒绝（见 F7.6）。**实测边界（spike-3）**：从未使用过 OneDrive 的新账户返回 503 `pending provisioning`——Provider 须识别并引导用户「打开 onedrive.com 完成开通」+ 指数退避重试；该 scope 下 `GET /me/drive` 为 403，实现不得依赖盘级元数据接口；过期令牌返回 401 "JWT is not well formed"，任何 401 一律按「需重授权」处理；
   - **Google Drive Provider**：Drive API，**仅使用 `drive.appdata` scope 访问 `appDataFolder`**（Google 非敏感 scope，避免 sensitive/restricted 审核；注意 appDataFolder 计入用户 15GB 配额；增量用 `changes.list` + `spaces=appDataFolder`）；
   - **本地 Provider**（IndexedDB）——离线兜底与未登录试用；登出或删除数据时同步清空（F7.8）；
 - F7.3 用户可在设置中查看和**切换**当前存储后端；切换/登录时支持数据迁移（导出→导入）；
@@ -567,9 +568,9 @@ LearnSkillsAssistant/  (monorepo, pnpm workspaces)
 |---|---|---|---|---|
 | 1 | ✅ **iOS 真机语音全链路（已完成 2026-08-30，iOS 16.7 / Safari 16.6，诊断页 `spikes/ios-voice/`，数据在 `spikes/ios-voice/results/`）** | 结论：① Safari 标签页内单句识别 en/zh **可用**（识别启动 ~55ms，final 置信 0.93–0.95；中文出现高置信误转写，坐实 F2.5 不判分）；② TTS→ASR 跟读顺序链路**通过**；并发时识别收不到语音，互斥约束坐实；③ **standalone 下识别被系统禁用（`service-not-allowed`）**——N9 该格定案为不可用、键盘作答；④ 权限仅首次弹出（3 次识别 0 次重复弹窗）；⑤ 连续识别模式 0 个 final、stop() 后仍吐结果——全产品一律单句式；⑥ 新发现：快速重启识别会 `aborted`，需冷却+重试 | 待补充样本：iOS 17/18 设备重测（把诊断页 URL 发给其他 iPhone 即可） | ✅ 完成 |
 | 2 | ⛳ **iOS TTS 手势链（部分完成）** | 已实测：手势解锁后 TTS en/zh 均可播放；**onend 事件丢失过一次 → 兜底定时器为必须**（已写入 F2）。未测：超时自动翻卡（无手势）路径能否发声、切后台恢复 | 剩余项在前端开发时验证 | P0 |
-| 3 | **同步协议最小闭环**（选定的第一个云盘） | 浏览器/BFF 写 ReviewLog 分片文件、If-Match/版本冲突实测、delta/changes 增量、令牌过期→重授权→队列冲销全流程（Safari 与 Chrome 各测） | 产出 StorageProvider 冲突处理约定与令牌状态机 | P0 |
+| 3 | ✅ **同步协议闭环（主体完成 2026-08-30，消费者 OneDrive 实测，`spikes/onedrive-sync/`）** | 结论：① **If-Match 乐观并发确证可用**（当前 eTag→200、过期 eTag→412）——技术评审存疑项解除；② `conflictBehavior=fail` 首创 201/重复 409——**ReviewLog 按会话分片可完全无锁**；③ approot 上 delta/deltaLink 增量可用；④ 单调用 1–1.8s，只适合后台同步；⑤ 新边界：未开通 OneDrive 返回 503 pending-provisioning（F7.2 需引导+退避）、过期令牌报 401 "JWT not well formed"（任何 401 一律视为重授权信号）。同步契约草案见 RESULTS.md | 剩余：浏览器 MSAL 令牌 UX 开发期补测 | ✅ 完成 |
 | 4 | **Safari `storage.persist()` vs ITP 清除** | 未安装 PWA 的 Safari 申请持久存储后，7 天不访问数据是否仍被清（目前无定论） | 豁免 → F6.4 风险条文放宽；不豁免 → 维持现文 | P0 |
-| 5 | **Claude CLI Provider 适配性** | `claude -p --output-format stream-json` 流式延迟、进程启动开销、结构化输出稳定性；同时用 Claude API 实现同一 LLMProvider 接口，确认接口无 CLI 特有泄漏 | LLMProvider 接口以 API 能力为基准冻结 | P0 |
-| 6 | **ReviewLog schema ↔ ts-fsrs 映射** | 用 ts-fsrs v5 跑通「自有 ReviewLog → 重放推导 MemoryState → next()」，验证千卡级重放性能 | schema 冻结前完成；性能不达标则设计快照+增量 | P0 |
+| 5 | ✅ **Claude CLI Provider 适配性（完成 2026-08-30，`spikes/claude-cli/`）** | 结论：① 原生 claude.exe 无 shell spawn + stdin 提示词全通（F8.10 姿势可行；注意 Node 18.20+ 禁 spawn `.cmd` 垫片）；② json/stream-json 信封干净映射 LLMProvider 接口，且自带每次调用的 cost/usage（服务 F8.8 配额）；③ **每次调用固定开销 ~5–6s、流式首 token ~8s**——教练对话需常驻进程模式（`--input-format stream-json` 单进程多轮），开发期批量任务可接受；④ 结构化输出会带 markdown 围栏——Provider 需「剥围栏→parse→schema 校验→失败重试」管线 | LLMProvider 接口以 API 能力为基准冻结（已确认） | ✅ 完成 |
+| 6 | ✅ **ReviewLog ↔ ts-fsrs 映射（完成 2026-08-30，`spikes/ts-fsrs-replay/`）** | 结论：① 完整日志重放推导 MemoryState 可行且极快（~30 万次 next()/秒，万卡 <1s）——**MemoryState 可作为可重建缓存，云端只需同步 ReviewLog**（大幅简化 spike-3 冲突面）；② 重放确定性成立，**前提 `enable_fuzz: false`**（要抖动就在编排层做确定性抖动）；③ 答错折减不清零实测（187 天→重学 10 分钟→4 天）；④ F4.13 三档映射有效；⑤ ts-fsrs 自带日志可由我们的 ReviewLog 推导，无需双写 | schema 冻结无障碍 | ✅ 完成 |
 | 7 | **iOS 推送端到端** | 添加主屏 → 手势请求权限 → VAPID 推送到达率；Declarative Web Push（Safari 18.4+）适用性 | F13 设计输入 | P1 |
 | 8 | **Chrome 端上识别** | `SpeechRecognition.available()/install()` + `processLocally` 实际可用性与 en-US 质量 | 决定是否作为隐私增强默认启用 | P1 |
