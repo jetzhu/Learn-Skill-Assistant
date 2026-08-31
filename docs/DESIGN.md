@@ -2,10 +2,11 @@
 
 | | |
 |---|---|
-| 版本 | v1.0（草稿） |
+| 版本 | v1.1（草稿） |
 | 日期 | 2026-08-30 |
 | 状态 | 待评审 |
-| 上游 | `REQUIREMENTS.md` v0.6（含附录 D 四项已完成 spike 的实测结论）、`SKILL_PACKS_V1.md` |
+| 上游 | `REQUIREMENTS.md` v0.7（含附录 D 四项已完成 spike 的实测结论）、`SKILL_PACKS_V1.md` |
+| v1.1 变更 | 内容模块化契约：SkillPack/Card schema 重构（packVersion、cardType、answerModes/evaluation 包级声明、acceptableAnswers、领域字段收进 `ext` 命名空间、supersedes/retired）；新增 §5.3 ContentSource 接口与包升级演进管线（对应需求 F1.7–F1.9） |
 
 本文把需求转化为可实施的技术设计。所有引用形如 F4.10/N9 的编号指向需求文档；标注 **[spike]** 的设计点有真机/真服务实测数据支撑。
 
@@ -76,8 +77,9 @@ pnpm-workspace:
 │   ├── providers/
 │   │   ├── storage/    # 接口 + indexeddb + onedrive（gdrive Phase 2）
 │   │   ├── llm/        # 接口 + claude-cli + claude-api 骨架 + openai-compat 骨架
-│   │   └── auth/       # 接口 + microsoft（google Phase 2 上半）
-│   └── content/        # 内置双技能包 JSON + 校验脚本
+│   │   ├── auth/       # 接口 + microsoft（google Phase 2 上半）
+│   │   └── content/    # ContentSource 接口 + builtin/file 实现（remote = 后期备课系统接入点，§5.3）
+│   └── content-packs/  # 内置双技能包 JSON + 校验脚本
 ├── apps/
 │   ├── web/            # React 19 + TypeScript + Vite + PWA
 │   └── server/         # Fastify BFF
@@ -92,32 +94,43 @@ pnpm-workspace:
 
 ### 3.1 技能包（content schema，F1.3 / SKILL_PACKS_V1 4.4）
 
+Schema 的设计原则（F1.9）：**核心字段域无关，领域字段进 `ext` 命名空间**——训练引擎、调度器、同步层永远只碰核心字段；新技能域 = 新 `ext` 命名空间 + （可选）新 cardType 渲染器，零改动核心。
+
 ```ts
 interface SkillPack {
   schemaVersion: 1;
-  id: string;                    // "zh-starter-v1" | "en-speaking-v1"
+  id: string;                    // "zh-starter" —— 不含版本（版本单列，F1.8）
+  packVersion: string;           // semver；升级走 §5.4 演进管线
   name: LocalizedText;           // { en: string; zh: string }
   domain: "language" | string;
-  targetLanguage: string;        // BCP-47，ASR/TTS 语言来源，禁止回退 UI 语言
-  promptLanguage: string;        // 情境面语言（包A=en，包B=zh）
-  origin: "builtin" | "imported" | "user";   // F1.6(c)
+  promptLanguage: string;        // 情境面语言（BCP-47）
+  origin: "builtin" | "imported" | "user" | "remote";   // F1.6(c)/F1.7
+  answerModes: ("voice" | "keyboard" | "self")[];       // 包声明可用作答方式（键盘/自评为全域基线）
+  evaluation: "self" | "ai-assisted";                   // 评分辅助方式
+  ext?: { lang?: { targetLanguage: string } };          // 域级扩展（language 域：ASR/TTS 语言）
   cards: Card[];
 }
 interface Card {
-  id: string;                    // 包内唯一，"A01"
+  id: string;                    // 包内唯一且身份不可复用（F1.8：id 与考核目标绑定）
+  cardType: "recall-output" | "listening" | string;     // 未知类型跳过不报错（向前兼容）
   skillId: string;               // 核心技能项（交错约束 F3.4 与变体归组用）
   context: string;               // 正面：情境（纯文本渲染，N10(c)）
   target: string;                // 背面：目标输出
-  pinyin?: string;               // 中文卡
-  literalGloss?: string;         // 中文卡直译
+  acceptableAnswers?: string[];  // 多可接受答案（问答/编程等域）
   explanation?: string;
   hints: [string, string];       // 一级/二级提示，作者/AI 产出，禁止运行时截取（F2.3）
   variantOf?: string;            // AI 变体卡 → 本体 cardId
+  supersedes?: string;           // 替代已退休旧卡（F1.8(b)，不继承旧调度状态）
+  retired?: boolean;             // 退休卡不再入队，ReviewLog 保留
   isProbe?: boolean;             // 迁移探针（F3.5，Phase 2）
+  ext?: {                        // 领域扩展命名空间——核心引擎不读取
+    lang?: { pinyin?: string; literalGloss?: string; toneNotes?: string };
+    // 未来：code?: {...} / interview?: {...}
+  };
 }
 ```
 
-导入路径（F1.6）：zod 严格校验（`.strict()` 拒绝未知字段）+ 上限（卡 ≤ 500、字段长度、总体积 ≤ 1MB）→ 失败整包拒绝 → `origin:"imported"` 标记。
+导入路径（F1.6）：zod 严格校验（核心字段 `.strict()`；`ext` 内按已注册命名空间校验、未知命名空间保留不解析）+ 上限（卡 ≤ 500、字段长度、总体积 ≤ 1MB）→ 失败整包拒绝 → 非内置来源标记 origin。
 
 ### 3.2 ReviewLog（F4.10/F4.13——唯一事实来源）
 
@@ -259,7 +272,34 @@ interface LLMProvider {
   - 仅开发者自用（F8.2 硬约束在 server 配置层强制：该 Provider 拒绝在非 loopback 绑定下启用）。
 - **ClaudeApiProvider / OpenAICompatProvider**：MVP 期只立骨架 + 契约测试，保证接口无 CLI 特有泄漏。
 
-### 5.3 AuthProvider + BFF 会话（F6.5 BFF 模式）
+### 5.3 ContentSource（F1.7/F1.8——练习集供给抽象）
+
+第四个 Provider：技能包的来源接口。MVP 只实现 `builtin` 与 `file`，但**接口形状现在冻结**，后期「专门备课系统」作为 `remote` 实现接入，训练侧零改动：
+
+```ts
+interface ContentSource {
+  readonly kind: "builtin" | "file" | "remote";
+  listPacks(): Promise<PackSummary[]>;                    // {id, packVersion, name, domain, cardCount}
+  fetchPack(id: string, version?: string): Promise<SkillPack>;
+  checkUpdates(installed: {id: string; packVersion: string}[]): Promise<PackUpdate[]>;
+}
+```
+
+**包升级演进管线**（所有来源共用，F1.8）：
+
+```
+fetchPack(新版本) → F1.6 完整校验（remote 无信任豁免）
+  → diff(旧包, 新包) 按 cardId：
+      仅内容微调（id 保留）        → 就地更新，MemoryState/调度不动
+      新卡（新 id）               → 按新卡入学
+      supersedes 指向旧卡         → 旧卡标记 retired（不再入队，日志保留），新卡按新卡入学
+      旧卡在新包中消失            → 标记 retired
+  → 预览界面（+N 新卡 / ~M 延续 / -K 退休）→ 用户确认 → 原子写入
+```
+
+不变量：**ReviewLog 永不修改**；退休卡日志保留；同一 cardId 的考核目标不变（内容系统侧的发布纪律，校验器对 target 大幅变更给警告）。
+
+### 5.4 AuthProvider + BFF 会话（F6.5 BFF 模式）
 
 浏览器只持 HttpOnly 会话 Cookie；令牌全在 server：
 
@@ -385,6 +425,7 @@ iOS Safari 未登录 7 天清除风险（F6.4）：`persist()` 尽力申请；�
 |---|---|
 | F2 交互全链 | §7.2 状态机 |
 | F4.1–F4.13 | §4 core 三模块 + §3.2/3.4 |
+| F1.7–F1.9 内容模块化 | §3.1 schema + §5.3 ContentSource 与升级管线 |
 | F7 存储抽象 | §5.1 + §3.3 |
 | F8.9/F8.10/F8.12 | §6 + §5.2 |
 | F9–F12 留存 | §7.1/§7.2 + M2 验收 |
