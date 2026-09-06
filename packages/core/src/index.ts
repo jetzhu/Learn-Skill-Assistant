@@ -5,3 +5,5 @@ export * from "./replay.js";
 export * from "./sessionBuilder.js";
 export * from "./sessionRuntime.js";
 export * from "./ids.js";
+export * from "./streak.js";
+export * from "./trial.js";
