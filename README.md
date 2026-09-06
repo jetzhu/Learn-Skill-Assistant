@@ -10,4 +10,25 @@
 - 登录：Microsoft / Google 账户
 - 数据：存储抽象层，用户数据存于自己的云盘（OneDrive / Google Drive）或本地
 
-📄 文档：[需求 REQUIREMENTS.md](docs/REQUIREMENTS.md)（v0.6，经六轮专家评审 + 四项技术验证）· [设计 DESIGN.md](docs/DESIGN.md) · [示例技能包选材 SKILL_PACKS_V1.md](docs/SKILL_PACKS_V1.md) · 技术验证代码与数据见 [spikes/](spikes/)。
+📄 文档：[需求 REQUIREMENTS.md](docs/REQUIREMENTS.md)（v0.7，经六轮专家评审 + 四项技术验证）· [设计 DESIGN.md](docs/DESIGN.md) · [示例技能包选材 SKILL_PACKS_V1.md](docs/SKILL_PACKS_V1.md) · 技术验证代码与数据见 [spikes/](spikes/)。
+
+## 运行（MVP，开发者自用）
+
+```bash
+pnpm install
+pnpm test                      # 全仓测试
+pnpm --filter @lsa/server dev  # BFF：http://127.0.0.1:8787（仅 loopback）
+pnpm --filter @lsa/web dev     # Web：http://localhost:5173（/api、/auth 代理到 BFF）
+```
+
+- **离线训练闭环**（键盘/自评/语音作答、体验会话、streak、掌握度地图）开箱即用，无需任何配置；
+- **AI 教练** 需要本机安装 Claude CLI（仅开发者自用，F8.2）；
+- **Microsoft 登录 + OneDrive 同步** 需要 Azure 应用注册：复制 `apps/server/.env.example` 为 `.env` 并填 `MS_CLIENT_ID`（个人账户 + 重定向 URI `http://localhost:5173/auth/microsoft/callback`）。
+
+```
+packages/core            调度引擎（重放/编排/运行时/streak，31 测试）
+packages/content-packs   内置双技能包（中文入门 42 卡 + 英语口语 42 卡）
+packages/providers/*     Storage / LLM / Auth / Content 四个抽象层
+apps/web                 React PWA（训练、教练、同步、遥测门控）
+apps/server              Fastify BFF（OAuth 令牌保管、Graph 代理、Claude CLI 代理、遥测）
+```

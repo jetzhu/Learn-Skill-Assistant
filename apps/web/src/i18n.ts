@@ -71,8 +71,21 @@ const en = {
     exportData: "Export my data (JSON)",
     wipe: "Delete all local data",
     wipeConfirm: "This deletes every local record. Export first if you care. Continue?",
+    cloud: "Cloud sync (your own OneDrive)",
+    signInMs: "Sign in with Microsoft",
+    enableDrive: "Enable OneDrive sync",
+    syncNow: "Sync now",
+    syncStatus: "Pending {{pending}} · last sync {{last}}",
+    provisioning: "Your OneDrive isn't set up yet — open onedrive.com once, then retry.",
+    reauth: "Cloud connection expired — sign in again to reconnect.",
+    logout: "Sign out",
   },
-  nav: { today: "Today", packs: "Packs", stats: "Stats", settings: "Settings" },
+  coach: {
+    title: "AI Coach",
+    intro: "A surprise scenario, you answer out loud, the coach guides then models — never the answer first.",
+    start: "Give me a scenario",
+  },
+  nav: { today: "Today", packs: "Packs", coach: "Coach", stats: "Stats", settings: "Settings" },
 };
 
 const zh: typeof en = {
@@ -145,8 +158,21 @@ const zh: typeof en = {
     exportData: "导出我的数据（JSON）",
     wipe: "删除全部本地数据",
     wipeConfirm: "将删除所有本地记录。在意的话请先导出。继续？",
+    cloud: "云同步（你自己的 OneDrive）",
+    signInMs: "用 Microsoft 账户登录",
+    enableDrive: "开启 OneDrive 同步",
+    syncNow: "立即同步",
+    syncStatus: "待同步 {{pending}} · 上次同步 {{last}}",
+    provisioning: "你的 OneDrive 尚未开通——打开 onedrive.com 一次后重试。",
+    reauth: "云端连接已过期——重新登录以恢复。",
+    logout: "退出登录",
   },
-  nav: { today: "今日", packs: "技能包", stats: "成长", settings: "设置" },
+  coach: {
+    title: "AI 教练",
+    intro: "教练给突发情境，你开口作答；先引导你自我修正、再示范——绝不先给答案。",
+    start: "来一个情境",
+  },
+  nav: { today: "今日", packs: "技能包", coach: "教练", stats: "成长", settings: "设置" },
 };
 
 export function initI18n(lng: string): void {

@@ -23,7 +23,9 @@ import {
   type Vacation,
 } from "@lsa/core";
 import { builtinPackData } from "@lsa/content-packs";
-import { allLogs, appendLog, getSetting, setSetting, tryPersist } from "./db.js";
+import { allLogs, appendLog, enqueueShard, getSetting, setSetting, tryPersist } from "./db.js";
+import { syncNow, type SyncStatus } from "./cloud/sync.js";
+import { initTelemetryGate, markActivated, track, trackOnce, checkRetentionEvents } from "./telemetry.js";
 
 const makeId = makeIdFactory();
 
@@ -72,8 +74,10 @@ interface AppState {
   lastActivityAt: string | null;
   session: SessionCtx | null;
   endSummary: EndSummary | null;
+  syncStatus: SyncStatus | null;
 
   init(): Promise<void>;
+  runSync(): Promise<void>;
   completeOnboarding(learnPackId: string): Promise<void>;
   startSession(trial: boolean): void;
   submitAnswer(ev: Omit<AnswerEvent, "ts">): Promise<void>;
@@ -106,6 +110,17 @@ export const useApp = create<AppState>((set, get) => ({
   lastActivityAt: null,
   session: null,
   endSummary: null,
+  syncStatus: null,
+
+  async runSync() {
+    const status = await syncNow();
+    if (status.mergedNew > 0) {
+      // 远端有其他设备的分片 → 重新加载并重放（幂等合并，spike-6 模式）
+      const logs = await allLogs();
+      set({ logs, states: deriveMemoryState(logs, DEFAULT_LADDER) });
+    }
+    set({ syncStatus: status });
+  },
 
   async init() {
     const packs = builtinPackData.map(validateSkillPack);
@@ -120,7 +135,10 @@ export const useApp = create<AppState>((set, get) => ({
     const newIntroduced = (await getSetting<{ date: string; count: number }>("newIntroduced")) ?? { date: "", count: 0 };
     const lastActivityAt = (await getSetting<string>("lastActivityAt")) ?? null;
     void tryPersist();
+    await initTelemetryGate();
     set({ ready: true, packs, logs, states, profile, streak, vacation, newIntroduced, lastActivityAt });
+    void get().runSync(); // 启动时机会性同步（F7.4），失败静默
+    void checkRetentionEvents(await getSetting<string>("firstSessionAt") ?? null);
   },
 
   async completeOnboarding(learnPackId) {
@@ -249,6 +267,29 @@ async function finalize(get: () => AppState, set: (p: Partial<AppState>) => void
   const ni = { date: today, count: usedBefore + introducedThisSession };
   await setSetting("newIntroduced", ni);
   await setSetting("lastActivityAt", now.toISOString());
+
+  // 会话分片入队（每设备每会话一个分片，create-only 无锁——spike-3 契约）
+  if (session.runtime.logs.length > 0) {
+    await enqueueShard(
+      `reviewlog/${session.runtime.deviceId}-${session.runtime.sessionId}.json`,
+      session.runtime.logs,
+    );
+    void get().runSync(); // 会话结束触发同步（F7.4），失败静默留队列
+  }
+
+  // 遥测（N8/N11 时序：首训完成后才开闸，无 ID、纯计数事件）
+  if (answered > 0) {
+    if (!(await getSetting<string>("firstSessionAt"))) await setSetting("firstSessionAt", now.toISOString());
+    await markActivated();
+    if (session.trial) {
+      track("trial_complete");
+      if (session.runtime.stats.comebackCardIds.length > 0) track("activation_moment"); // F9.5 重现闭环
+    } else {
+      track("session_complete");
+    }
+    if (streakUpdate.state.current === 7) void trackOnce("streak_7");
+    if (streakUpdate.state.current === 30) void trackOnce("streak_30");
+  }
 
   const stats = session.runtime.stats;
   set({

@@ -7,6 +7,7 @@ import Welcome from "./pages/Welcome.js";
 import Today from "./pages/Today.js";
 import Session from "./pages/Session.js";
 import Packs from "./pages/Packs.js";
+import Coach from "./pages/Coach.js";
 import Stats from "./pages/Stats.js";
 import Settings from "./pages/Settings.js";
 
@@ -40,6 +41,7 @@ export default function App() {
         <Route path="/" element={<Today />} />
         <Route path="/session" element={<Session />} />
         <Route path="/packs" element={<Packs />} />
+        <Route path="/coach" element={<Coach />} />
         <Route path="/stats" element={<Stats />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />
@@ -48,6 +50,7 @@ export default function App() {
         <nav className="nav">
           <NavLink to="/" end className={({ isActive }) => (isActive ? "active" : "")}>{t("nav.today")}</NavLink>
           <NavLink to="/packs" className={({ isActive }) => (isActive ? "active" : "")}>{t("nav.packs")}</NavLink>
+          <NavLink to="/coach" className={({ isActive }) => (isActive ? "active" : "")}>{t("nav.coach")}</NavLink>
           <NavLink to="/stats" className={({ isActive }) => (isActive ? "active" : "")}>{t("nav.stats")}</NavLink>
           <NavLink to="/settings" className={({ isActive }) => (isActive ? "active" : "")}>{t("nav.settings")}</NavLink>
         </nav>

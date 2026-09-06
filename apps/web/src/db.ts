@@ -5,19 +5,54 @@ import type { ReviewLogEntry } from "@lsa/core";
 interface LsaDB extends DBSchema {
   reviewlog: { key: string; value: ReviewLogEntry; indexes: { byTs: string } };
   settings: { key: string; value: { key: string; data: unknown } };
+  /** 待上传分片队列（F7.4：机会性同步，令牌失效绝不阻塞训练）。 */
+  syncqueue: { key: string; value: { path: string; body: { entries: ReviewLogEntry[] } } };
 }
 
 let dbPromise: Promise<IDBPDatabase<LsaDB>> | null = null;
 
 export function db(): Promise<IDBPDatabase<LsaDB>> {
-  dbPromise ??= openDB<LsaDB>("lsa", 1, {
-    upgrade(d) {
-      const logs = d.createObjectStore("reviewlog", { keyPath: "id" });
-      logs.createIndex("byTs", "ts");
-      d.createObjectStore("settings", { keyPath: "key" });
+  dbPromise ??= openDB<LsaDB>("lsa", 2, {
+    upgrade(d, oldVersion) {
+      if (oldVersion < 1) {
+        const logs = d.createObjectStore("reviewlog", { keyPath: "id" });
+        logs.createIndex("byTs", "ts");
+        d.createObjectStore("settings", { keyPath: "key" });
+      }
+      if (oldVersion < 2) {
+        d.createObjectStore("syncqueue", { keyPath: "path" });
+      }
     },
   });
   return dbPromise;
+}
+
+export async function enqueueShard(path: string, entries: ReviewLogEntry[]): Promise<void> {
+  if (entries.length === 0) return;
+  await (await db()).put("syncqueue", { path, body: { entries } });
+}
+
+export async function pendingShards(): Promise<{ path: string; body: { entries: ReviewLogEntry[] } }[]> {
+  return (await db()).getAll("syncqueue");
+}
+
+export async function removeShard(path: string): Promise<void> {
+  await (await db()).delete("syncqueue", path);
+}
+
+export async function mergeLogs(entries: ReviewLogEntry[]): Promise<number> {
+  const d = await db();
+  const tx = d.transaction("reviewlog", "readwrite");
+  let added = 0;
+  for (const e of entries) {
+    const existing = await tx.store.get(e.id);
+    if (!existing) {
+      await tx.store.put(e);
+      added++;
+    }
+  }
+  await tx.done;
+  return added;
 }
 
 export async function appendLog(entry: ReviewLogEntry): Promise<void> {
@@ -42,6 +77,7 @@ export async function wipeAll(): Promise<void> {
   const d = await db();
   await d.clear("reviewlog");
   await d.clear("settings");
+  await d.clear("syncqueue");
 }
 
 export async function exportAll(): Promise<{ logs: ReviewLogEntry[]; settings: Record<string, unknown> }> {

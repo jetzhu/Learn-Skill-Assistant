@@ -7,6 +7,7 @@ import { i18next } from "../i18n.js";
 export default function Settings() {
   const { t } = useTranslation();
   const app = useApp();
+  const sync = app.syncStatus;
 
   async function doExport() {
     // 数据可携（F7.9 本地部分）：公开 JSON 结构下载
@@ -62,6 +63,37 @@ export default function Settings() {
               <button key={d} className="btn" onClick={() => void startVacation(d)}>{d}d</button>
             ))}
           </div>
+        )}
+      </div>
+
+      <div className="card">
+        <h2>{t("settings.cloud")}</h2>
+        {sync?.session.signedIn ? (
+          <>
+            <div className="mut">✅ {sync.session.displayName ?? "Microsoft"}</div>
+            {sync.session.driveConsented ? (
+              <>
+                <div className="mut">
+                  {sync.state === "provisioning"
+                    ? t("settings.provisioning")
+                    : sync.state === "reauth-required"
+                      ? t("settings.reauth")
+                      : t("settings.syncStatus", { pending: sync.pending, last: sync.lastSync?.slice(0, 16).replace("T", " ") ?? "—" })}
+                </div>
+                <button className="btn" onClick={() => void app.runSync()}>{t("settings.syncNow")}</button>
+              </>
+            ) : (
+              <a className="btn primary" href="/auth/drive/consent">{t("settings.enableDrive")}</a>
+            )}
+            <button
+              className="btn ghost"
+              onClick={() => void fetch("/auth/logout", { method: "POST", credentials: "include" }).then(() => app.runSync())}
+            >
+              {t("settings.logout")}
+            </button>
+          </>
+        ) : (
+          <a className="btn primary" href="/auth/microsoft/start">{t("settings.signInMs")}</a>
         )}
       </div>
 
