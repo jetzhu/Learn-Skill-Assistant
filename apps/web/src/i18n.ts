@@ -24,6 +24,9 @@ const en = {
   },
   session: {
     sayIt: "Say it out loud, then…",
+    speakAnswer: "Answer by voice",
+    listening: "Listening…",
+    voiceFail: "Didn't catch that — try again or use the keyboard.",
     typeIt: "Type your answer",
     iSaidIt: "I said it — show answer",
     showHint: "hint",
@@ -95,6 +98,9 @@ const zh: typeof en = {
   },
   session: {
     sayIt: "先开口说出来，然后…",
+    speakAnswer: "语音作答",
+    listening: "聆听中…",
+    voiceFail: "没听清——再试一次，或改用键盘。",
     typeIt: "键盘输入你的答案",
     iSaidIt: "我说出来了——看答案",
     showHint: "提示",

@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { DAY_MS, DEFAULT_SESSION, buildSession } from "@lsa/core";
 import { useApp } from "../store.js";
 import { localDate } from "../store.js";
+import { unlockAudio, resetVoiceFailures } from "../speech/service.js";
 
 /** 今日面板（F10.4）：只显示「今天这一组」，永不显示总积压（F4.7）。 */
 export default function Today() {
@@ -28,6 +29,8 @@ export default function Today() {
   const hasAnyHistory = app.logs.length > 0;
 
   function start() {
+    unlockAudio(); // 手势链内解锁音频（F2.4）
+    resetVoiceFailures();
     app.startSession(!hasAnyHistory);
     nav("/session");
   }

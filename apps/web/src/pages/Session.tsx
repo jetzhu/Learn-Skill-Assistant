@@ -3,6 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { currentCard, DAY_MS, type Card, type Grade } from "@lsa/core";
 import { useApp } from "../store.js";
+import { classifySpeech, detectEnv } from "../speech/capability.js";
+import { speak, recognizeOnce, getVoiceFailures, noteVoiceFailure, unlockAudio } from "../speech/service.js";
+
+const speechCap = typeof window !== "undefined" ? classifySpeech(detectEnv()) : null;
 
 /**
  * 训练卡状态机（DESIGN §7.2，M2 形态：键盘 + 自评；语音在 M3 注入）：
@@ -35,7 +39,10 @@ function CardTrainer() {
   const [phase, setPhase] = useState<"prompt" | "reveal">("prompt");
   const [hintLevel, setHintLevel] = useState<0 | 1 | 2>(0);
   const [typed, setTyped] = useState("");
-  const [answerMode, setAnswerMode] = useState<"keyboard" | "self" | null>(null);
+  const [heard, setHeard] = useState("");
+  const [listening, setListening] = useState(false);
+  const [voiceError, setVoiceError] = useState(false);
+  const [answerMode, setAnswerMode] = useState<"voice" | "keyboard" | "self" | null>(null);
   const [latency, setLatency] = useState<number | null>(null);
   const [toneUnsure, setToneUnsure] = useState(false);
   const [remaining, setRemaining] = useState(item.answerWindowSec);
@@ -45,6 +52,10 @@ function CardTrainer() {
 
   const window_ = item.answerWindowSec;
   const reappeared = item.step > 0;
+  const targetLang = pack.ext?.lang?.targetLanguage ?? "en-US";
+  // 语音可用性：包声明 × 平台矩阵 × 会话内连续失败降级（F2.2：两次失败切键盘）
+  const voiceUsable =
+    !!speechCap?.asrAvailable && pack.answerModes.includes("voice") && getVoiceFailures() < 2;
 
   // 倒计时：到点 → 分级提示（F2.3），二级提示后再到点 → 翻答案
   useEffect(() => {
@@ -67,13 +78,41 @@ function CardTrainer() {
     return () => clearInterval(iv);
   }, [window_, phase]);
 
-  function markAnswerStart(mode: "keyboard" | "self") {
+  function markAnswerStart(mode: "voice" | "keyboard" | "self") {
     if (latency === null) {
       setLatency(Math.round(performance.now() - shownAt.current));
       setAnswerMode(mode);
       pausedRef.current = true; // 开口/落键后计时暂停（F2.2）
     }
   }
+
+  async function startVoice() {
+    unlockAudio();
+    setVoiceError(false);
+    setListening(true);
+    const res = await recognizeOnce({
+      lang: targetLang, // 识别语言取自技能包，禁止回退 UI 语言（F1.3）
+      onInterim: (txt) => {
+        markAnswerStart("voice");
+        setHeard(txt);
+      },
+    });
+    setListening(false);
+    if (res.ok) {
+      markAnswerStart("voice");
+      setHeard(res.transcript); // 仅作对照展示，绝不自动判分（F2.5）
+      setPhase("reveal");
+    } else {
+      noteVoiceFailure();
+      setVoiceError(true);
+    }
+  }
+
+  // 翻卡后 TTS 朗读答案（F2.4 跟读输入）；失败静默，常驻重播按钮兜底
+  useEffect(() => {
+    if (phase === "reveal" && speechCap?.ttsAvailable) void speak(card.target, targetLang);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
 
   async function grade(g: Grade) {
     await app.submitAnswer({
@@ -115,6 +154,12 @@ function CardTrainer() {
       {phase === "prompt" && (
         <>
           <div className="mut">{t("session.sayIt")}</div>
+          {voiceUsable && (
+            <button className={`btn ${speechCap?.asrDefault === "voice" ? "primary" : ""}`} disabled={listening} onClick={() => void startVoice()}>
+              {listening ? `👂 ${t("session.listening")}${heard ? ` — ${heard}` : ""}` : `🎤 ${t("session.speakAnswer")}`}
+            </button>
+          )}
+          {voiceError && <div className="hintbox">{t("session.voiceFail")}</div>}
           <input
             type="text"
             placeholder={t("session.typeIt")}
@@ -149,6 +194,11 @@ function CardTrainer() {
             {card.ext?.lang?.pinyin && <div className="pinyin">{card.ext.lang.pinyin}</div>}
             {card.ext?.lang?.literalGloss && <div className="gloss">{card.ext.lang.literalGloss}</div>}
             {typed.trim() && <div className="mut" style={{ marginTop: 8 }}>✍️ {typed}</div>}
+            {heard.trim() && <div className="mut" style={{ marginTop: 4 }}>🎤 {heard}</div>}
+            {speechCap?.ttsAvailable && (
+              <button className="btn ghost" style={{ width: "auto", display: "inline-block", padding: "6px 14px" }}
+                onClick={() => void speak(card.target, targetLang)}>🔊</button>
+            )}
           </div>
 
           {ctx.trial && latency === null && (
